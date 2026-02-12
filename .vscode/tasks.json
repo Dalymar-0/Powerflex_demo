@@ -1,0 +1,126 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "PowerFlex: Start API Server (FastAPI on port 8001)",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/Scripts/uvicorn.exe",
+			"args": [
+				"app.main:app",
+				"--reload",
+				"--host",
+				"127.0.0.1",
+				"--port",
+				"8001"
+			],
+			"cwd": "${workspaceFolder}",
+			"isBackground": true,
+			"problemMatcher": {
+				"pattern": {
+					"regexp": "^.*$",
+					"file": 1,
+					"location": 2,
+					"message": 3
+				},
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "^.*Uvicorn running.*",
+					"endsPattern": "^.*Application startup complete.*"
+				}
+			},
+			"presentation": {
+				"reveal": "always",
+				"panel": "new",
+				"showReuseMessage": false,
+				"clear": false
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			}
+		},
+		{
+			"label": "PowerFlex: Start Flask GUI (port 5000)",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/Scripts/python.exe",
+			"args": [
+				"${workspaceFolder}/flask_gui.py"
+			],
+			"cwd": "${workspaceFolder}",
+			"isBackground": true,
+			"problemMatcher": {
+				"pattern": {
+					"regexp": "^.*$"
+				},
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "^.*Running on.*",
+					"endsPattern": "^.*WARNING.*"
+				}
+			},
+			"presentation": {
+				"reveal": "always",
+				"panel": "new",
+				"showReuseMessage": false,
+				"clear": false
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			}
+		},
+		{
+			"label": "PowerFlex: Initialize Database",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/Scripts/python.exe",
+			"args": [
+				"-c",
+				"from app.database import init_db; init_db(); print('✅ Database initialized')"
+			],
+			"cwd": "${workspaceFolder}",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			}
+		},
+		{
+			"label": "PowerFlex: Run Scenario A (Basic Deployment)",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/Scripts/python.exe",
+			"args": [
+				"${workspaceFolder}/app/scenario_a.py"
+			],
+			"cwd": "${workspaceFolder}",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			}
+		},
+		{
+			"label": "PowerFlex: Full Stack - API + GUI",
+			"dependsOn": [
+				"PowerFlex: Start API Server (FastAPI on port 8001)",
+				"PowerFlex: Start Flask GUI (port 5000)"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		}
+	]
+}

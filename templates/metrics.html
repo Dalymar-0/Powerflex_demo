@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Metrics</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-dark" style="background-color: #667eea;">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">PowerFlex - Metrics</span>
+            <a href="/" class="btn btn-light">Home</a>
+        </div>
+    </nav>
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-6">
+                <h2>Pool Metrics</h2>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Pool</th>
+                                <th>Total Capacity</th>
+                                <th>Used</th>
+                                <th>Free</th>
+                                <th>Health</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pool in pools %}
+                            <tr>
+                                <td>{{ pool.name }}</td>
+                                <td>{{ pool.total_capacity }} GB</td>
+                                <td>{{ pool.used_capacity }} GB</td>
+                                <td>{{ pool.total_capacity - pool.used_capacity }} GB</td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if pool.health == 'OK' else 'warning' if pool.health == 'DEGRADED' else 'danger' }}">
+                                        {{ pool.health }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <h2>SDS Metrics</h2>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>SDS Node</th>
+                                <th>Total Capacity</th>
+                                <th>Used</th>
+                                <th>State</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sds in sds_nodes %}
+                            <tr>
+                                <td>{{ sds.name }}</td>
+                                <td>{{ sds.total_capacity_gb }} GB</td>
+                                <td>{{ sds.used_capacity_gb }} GB</td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if sds.state == 'UP' else 'danger' }}">
+                                        {{ sds.state }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <h2>Volume Metrics</h2>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Volume</th>
+                                <th>Size</th>
+                                <th>Used</th>
+                                <th>State</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for vol in volumes %}
+                            <tr>
+                                <td>{{ vol.name }}</td>
+                                <td>{{ vol.size_gb }} GB</td>
+                                <td>{{ vol.used_capacity }} GB</td>
+                                <td>
+                                    <span class="badge bg-{{ 'primary' if vol.state == 'AVAILABLE' else 'success' if vol.state == 'IN_USE' else 'danger' }}">
+                                        {{ vol.state }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

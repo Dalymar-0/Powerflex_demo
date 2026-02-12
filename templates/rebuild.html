@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Rebuild</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-dark" style="background-color: #667eea;">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">PowerFlex - Rebuild</span>
+            <a href="/" class="btn btn-light">Home</a>
+        </div>
+    </nav>
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ 'danger' if category == 'danger' else 'success' }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+        <h2>Pool Rebuild Status & Control</h2>
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Pool</th>
+                        <th>Health</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pool in pools %}
+                    <tr>
+                        <td>{{ pool.name }}</td>
+                        <td>
+                            <span class="badge bg-{{ 'success' if pool.health == 'OK' else 'warning' if pool.health == 'DEGRADED' else 'danger' }}">
+                                {{ pool.health }}
+                            </span>
+                        </td>
+                        <td>
+                            <form method="post" action="/rebuild/{{ pool.id }}/start" style="display:inline;">
+                                <button type="submit" class="btn btn-sm btn-primary">Start Rebuild</button>
+                            </form>
+                            <a href="/rebuild/{{ pool.id }}/status" class="btn btn-sm btn-info" target="_blank">Check Status</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
