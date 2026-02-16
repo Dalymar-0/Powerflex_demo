@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 RH_USER='dalymarouan@gmail.com'
 RH_PASS='gg*xXxG,j4Crh!U'
 echo "[1/5] SSH setup..."

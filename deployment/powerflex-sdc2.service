@@ -1,0 +1,15 @@
+[Unit]
+Description=PowerFlex SDC2 Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/Powerflex_demo
+Environment="PYTHONPATH=/opt/Powerflex_demo"
+ExecStart=/bin/bash -lc '/opt/rh/rh-python38/root/usr/bin/python3 /opt/Powerflex_demo/scripts/run_sdc_service.py --sdc-id 2 --address 172.30.128.54 --mdm-address 172.30.128.50 --mdm-port 8001 --control-port 8003 --nbd-port 8005 --mgmt-port 8004'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

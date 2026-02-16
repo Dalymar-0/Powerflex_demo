@@ -1,370 +1,116 @@
 """
-Component Health Monitor for MGMT (Phase 9)
+Lightweight component monitor for MGMT.
 
-Background service that polls MDM health endpoints and caches data in mgmt.db.
-This provides fast dashboard rendering without hammering MDM with every page load.
-
-Monitors:
----------
-- Cluster health (via /health endpoint)
-- Component status (via /health/components)
-- Health metrics (via /health/metrics)
-- Volume stats (via /vol/list)
-- Pool capacity (via /pool/list)
-
-Architecture:
--------------
-MGMT Monitor (background thread) → MDM HTTP API (poll every 10s) → Cache in mgmt.db
-Dashboard UI → Read from cache → Fast page loads
+Polls key MDM endpoints in a background thread and stores an in-memory cache
+for dashboard rendering.
 """
 
-import requests
+import logging
 import threading
 import time
-import json
-import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
-from sqlalchemy.orm import Session
-from sqlalchemy import text
+from datetime import datetime
+from typing import Any, Dict, Optional
 
-from mgmt.models import AlertHistory, AlertSeverity, AlertStatus, Alert
-from mgmt.database import SessionLocal
+import requests
 
-# Configure logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
-# Alert model is now directly imported from models
+_cache_lock = threading.Lock()
+_cache_data: Dict[str, Any] = {}
+_cache_ts: Dict[str, datetime] = {}
+
+
+def get_cached_data(key: str) -> Optional[Any]:
+    with _cache_lock:
+        return _cache_data.get(key)
+
+
+def get_all_cached_keys() -> Dict[str, str]:
+    with _cache_lock:
+        return {k: v.isoformat() for k, v in _cache_ts.items()}
 
 
 class ComponentMonitor:
-    """
-    Background monitor that polls MDM for health data.
-    
-    Runs in a separate thread, wakes every poll_interval seconds,
-    fetches health data from MDM, and caches in mgmt.db.
-    """
-    
     def __init__(
         self,
         mdm_base_url: str = "http://127.0.0.1:8001",
         poll_interval: int = 10,
         cache_ttl: int = 30,
-        max_retries: int = 3,
+        max_retries: int = 2,
         retry_delay: float = 1.0,
     ):
-        """
-        Initialize component monitor.
-        
-        Args:
-            mdm_base_url: MDM HTTP API base URL
-            poll_interval: Seconds between polls
-            cache_ttl: Seconds until cached data expires
-            max_retries: Maximum retry attempts for failed HTTP requests
-            retry_delay: Initial delay between retries (exponential backoff)
-        """
         self.mdm_base_url = mdm_base_url.rstrip("/")
         self.poll_interval = poll_interval
         self.cache_ttl = cache_ttl
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        
+
         self._running = False
-        selflogger.warning("Monitor already running")
+        self._thread: Optional[threading.Thread] = None
+        self._session = requests.Session()
+
+    def start(self):
+        if self._running:
             return
-        
         self._running = True
         self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._thread.start()
-        logger.info(f"Monitor started (poll every {self.poll_interval}s, cache TTL {self.cache_ttl}s)")
-    
+        logger.info("MGMT monitor started")
+
     def stop(self):
-        """Stop background monitoring thread."""
-        if not self._running:
-            return
-        
         self._running = False
         if self._thread:
-            self._thread.join(timeout=5.0)
-        
-        # Close HTTP session
+            self._thread.join(timeout=5)
         self._session.close()
-        logger.info("Monitor loop started")
+        logger.info("MGMT monitor stopped")
+
+    def _monitor_loop(self):
         while self._running:
             try:
-                self._poll_all_endpoints()
-            except Exception as e:
-                logger.exception(f"xponential backoff.
-        
-        Args:
-            url: Full URL to fetch
-            timeout: Request timeout in seconds
-            
-        Returns:
-            Response object if successful, None if all retries failed
-        """
+                self._poll_all()
+            except Exception as exc:
+                logger.warning("Monitor poll failed: %s", exc)
+            time.sleep(self.poll_interval)
+
+    def _http_get(self, path: str) -> Optional[Any]:
+        url = f"{self.mdm_base_url}{path}"
         for attempt in range(self.max_retries):
             try:
-                resp = self._session.get(url, timeout=timeout)
-                if resp.status_code == 200:
-                    return resp
-                elif resp.status_code >= 500:
-                    # Server error - retry
-                    logger.warning(f"HTTP {resp.status_code} from {url}, attempt {attempt + 1}/{self.max_retries}")
-                else:
-                    # Client error (4xx) - don't retry
-                    logger.error(f"HTTP {resp.status_code} from {url}: {resp.text[:200]}")
-                    return None
-            except requests.exceptions.Timeout:
-                logger.warning(f"Timeout fetching {url}, attempt {attempt + 1}/{self.max_retries}")
-            except requests.exceptions.ConnectionError as e:
-                logger.warning(f"Connection error fetching {url}: {e}, attempt {attempt + 1}/{self.max_retries}")
-            except Exception as e:
-                logger.error(f"Unexpected error fetching {url}: {e}")
-                return None
-            
-            # Exponential backoff
+                response = self._session.get(url, timeout=5)
+                if response.status_code == 200:
+                    return response.json()
+            except Exception:
+                pass
             if attempt < self.max_retries - 1:
-                delay = self.retry_delay * (2 ** attempt)
-                time.sleep(delay)
-        
-        logger.error(f"All {self.max_retries} retry attempts failed for {url}")
-        resp = self._http_get_with_retry(f"{self.mdm_base_url}/health")
-        if resp and resp.status_code == 200:
-            try:
-                data = resp.json()
-                self._cache_data(db, "health_summary", data)
-                logger.debug("Polled health summary successfully")
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON from /health: {e}")
-        elif resp:
-            logger.warning(f"Health summary returned {resp.status_code}")
-    
-    def _poll_component_health(self, db: Session):
-        """Poll /health/components for component details."""
-        resp = self._http_get_with_retry(f"{self.mdm_base_url}/health/components")
-        if resp and resp.status_code == 200:
-            try:
-                data = resp.json()
-                self._cache_data(db, "component_health", data)
-                
-                # Check for component state changes and generate alerts
-                self._check_component_alerts(db, data)
-                logger.debug("Polled component health successfully")
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON from /health/components: {e}")
-        elif resp:
-            logger.warning(f"Component health returned {resp.status_code}")
-    
-    def _poll_health_metrics(self, db: Session):
-        """Poll /health/metrics for cluster metrics."""
-        resp = self._http_get_with_retry(f"{self.mdm_base_url}/health/metrics")
-        if resp and resp.status_code == 200:
-            try:
-                data = resp.json()
-                self._cache_data(db, "health_metrics", data)
-                logger.debug("Polled health metrics successfully")
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON from /health/metrics: {e}")
-        elif resp:
-            logger.warning(f"Health metrics returned {resp.status_code}")
-    
-    def _poll_volume_list(self, db: Session):
-        """Poll /vol/list for volume statistics."""
-        resp = self._http_get_with_retry(f"{self.mdm_base_url}/vol/list")
-        if resp and resp.status_code == 200:
-            try:
-                data = resp.json()
-                self._cache_data(db, "volume_list", data)
-                logger.debug("Polled volume list successfully")
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON from /vol/list: {e}")
-        elif resp:
-            logger.warning(f"Volume list returned {resp.status_cod
-            db.commit()
-        finally:
-            db.close()
-    
-    def _poll_health_summary(self, db: Session):
-        """Poll /health for overall cluster health."""
-        try:
-            resp = requests.get(f"{self.mdm_base_url}/health", timeout=5)
-            if resp.status_code == 200:
-        resp = self._http_get_with_retry(f"{self.mdm_base_url}/pool/list")
-        if resp and resp.status_code == 200:
-            try:
-                data = resp.json()
-                self._cache_data(db, "pool_list", data)
-                logger.debug("Polled pool list successfully")
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON from /pool/list: {e}")
-        elif resp:
-            logger.warning(f"Pool list returned {resp.status_code}")
-    
-    def _poll_cluster_topology(self, db: Session):
-        """Poll /discovery/topology for cluster topology."""
-        resp = self._http_get_with_retry(f"{self.mdm_base_url}/discovery/topology")
-        if resp and resp.status_code == 200:
-            try:
-                data = resp.json()
-                self._cache_data(db, "cluster_topology", data)
-                logger.debug("Polled cluster topology successfully")
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON from /discovery/topology: {e}")
-        elif resp:
-            logger.warning(f"Topology returned {resp.status_coderror: {e}")
-    
-    def _poll_health_metrics(self, db: Session):
-        """Poll /health/metrics for cluster metrics."""
-        try:
-            resp = requests.get(f"{self.mdm_base_url}/health/metrics", timeout=5)
-            if resp.status_code == 200:
-                data = resp.json()
-                self._cache_data(db, "health_metrics", data)
-            else:
-                print(f"[MGMT Monitor] Health metrics failed: {resp.status_code}")
-        except Exception as e:
-            print(f"[MGMT Monitor] Health metrics error: {e}")
-    
-    def _poll_volume_list(self, db: Session):
-        """Poll /vol/list for volume statistics."""
-        try:
-            resp = requests.get(f"{self.mdm_base_url}/vol/list", timeout=5)
-            if resp.status_code == 200:
-                data = resp.json()
-                self._cache_data(db, "volume_list", data)
-            else:
-                print(f"[MGMT Monitor] Volume list failed: {resp.status_code}")
-        except Exception as e:
-            print(f"[MGMT Monitor] Volume list error: {e}")
-    
-    def _poll_pool_list(self, db: Session):
-        """Poll /pool/list for pool capacity statistics."""
-        try:
-            resp = requests.get(f"{self.mdm_base_url}/pool/list", timeout=5)
-            if resp.status_code == 200:
-                data = resp.json()
-                self._cache_data(db, "pool_list", data)
-            else:
-                print(f"[MGMT Monitor] Pool list failed: {resp.status_code}")
-        except Exception as e:
-            print(f"[MGMT Monitor] Pool list error: {e}")
-    
-    def _poll_cluster_topology(self, db: Session):
-        """Poll /discovery/topology for cluster topology."""
-        try:
-            resp = requests.get(f"{self.mdm_base_url}/discovery/topology", timeout=5)
-            if resp.status_code == 200:
-                data = resp.json()
-                self._cache_data(db, "cluster_topology", data)
-            else:
-                print(f"[MGMT Monitor] Topology failed: {resp.status_code}")
-        except Exception as e:
-            print(f"[MGMT Monitor] Topology error: {e}")
-    
-    def _cache_data(self, db: Session, cache_key: str, data: Any):
-        """Store data in in-memory cache."""
-        global _global_cache
-        expires_at = datetime.utcnow() + timedelta(seconds=self.cache_ttl)
-        _global_cache[cache_key] = {
-            'data': data,
-            'cached_at': datetime.utcnow(),
-            'expires_at': expires_at,
-        }
-    
-    def _check_component_alerts(self, db: Session, components: List[Dict[str, Any]]):
-        """
-        Check component health and generate alerts for state changes.
-        
-        Generates alerts when:
-        - Component becomes INACTIVE
-        - Component recovers to ACTIVE
-        - Component misses heartbeats (stale)
-        """
-        for comp in components:
-            comp_id = comp.get("component_id", "unknown")
-            comp_type = comp.get("type", "unknown")
-            status = comp.get("status", "unknown")
-            is_stale = comp.get("is_stale", False)
-            
-            # Check for inactive component
-            if status == "INACTIVE":
-                alert_id = f"component_inactive_{comp_id}"
-                existing = db.query(Alert).filter_by(alert_id=alert_id, resolved=False).first()
-                if not existing:
-                    # New alert: component went down
-                    alert = Alert(
-                        alert_id=alert_id,
-                        severity=AlertSeverity.CRITICAL.value,
-                        component_type=comp_type,
-                    logger.warning(f"ALERT RAISED: {alert.title}", extra={"alert_id": alert_id, "severity": "CRITICAL"})
-            
-            # Check for component recovery
-            elif status == "ACTIVE":
-                alert_id = f"component_inactive_{comp_id}"
-                existing = db.query(Alert).filter_by(alert_id=alert_id, resolved=False).first()
-                if existing:
-                    # Component recovered - resolve alert
-                    existing.resolved = True
-                    existing.resolved_at = datetime.utcnow()
-                    logger.info(f"ALERT RESOLVED: Component {comp_id} recovered", extra={"alert_id": alert_id}
-                alert_id = f"component_inactive_{comp_id}"
-                existing = db.query(Alert).filter_by(alert_id=alert_id, resolved=False).first()
-                if existing:
-                    # Component recovered - resolve alert
-                    existing.resolved = True
-                    existing.resolved_at = datetime.utcnow()
-                    print(f"[MGMT Monitor] RESOLVED: Component {comp_id} recovered")
-            
-            # Check for stale heartbeat warning
-            if is_stale and status == "ACTIVE":
-                alert_id = f"component_stale_{comp_id}"
-                existing = db.query(Alert).filter_by(alert_id=alert_id, resolved=False).first()
-                if not existing:
-                    alert = Alert(
-                        alert_id=alert_id,
-                        severity=AlertSeverity.WARNING.value,
-                        component_type=comp_type,
-                        component_id=comp_id,
-                    logger.warning(f"ALERT RAISED: {alert.title}", extra={"alert_id": alert_id, "severity": "WARNING"}_id}",
-                        message=f"Component {comp_id} ({comp_type}) has a stale heartbeat (>20s old).",
-                        details=comp,
-                        created_at=datetime.utcnow(),
-                    )
-                    db.add(alert)
-                    print(f"[MGMT Monitor] WARNING: {alert.title}")
-
-
-# Phase 9: Simple in-memory cache (Phase 10 can add persistent cache)
-_global_cache: Dict[str, Any] = {}
-
-def get_cached_data(cache_key: str) -> Optional[Dict[str, Any]]:
-    """
-    Retrieve cached data from in-memory cache.
-    
-    Returns None if cache miss or expired.
-    """
-    if cache_key not in _global_cache:
+                time.sleep(self.retry_delay)
         return None
-    
-    entry = _global_cache[cache_key]
-    if entry['expires_at'] < datetime.utcnow():
-        return None
-    
-    return entry['data']
 
+    def _put_cache(self, key: str, data: Any):
+        with _cache_lock:
+            _cache_data[key] = data
+            _cache_ts[key] = datetime.utcnow()
 
-def get_all_cached_keys() -> List[str]:
-    """Get list of all cache keys in in-memory cache."""
-    return list(_global_cache.keys())
+    def _poll_all(self):
+        health = self._http_get("/health")
+        if health is not None:
+            self._put_cache("health_summary", health)
 
+        components = self._http_get("/health/components")
+        if components is not None:
+            self._put_cache("component_health", components)
 
-def clear_expired_cache():
-    """Rlogger.debug(f"ries from in-memory cache."""
-    now = datetime.utcnow()
-    expired_keys = [k for k, v in _global_cache.items() if v['expires_at'] < now]
-    for key in expired_keys:
-        del _global_cache[key]
-    if expired_keys:
-        print(f"[MGMT Monitor] Cleared {len(expired_keys)} expired cache entries")
+        metrics = self._http_get("/health/metrics")
+        if metrics is not None:
+            self._put_cache("health_metrics", metrics)
+
+        pools = self._http_get("/pool/list")
+        if pools is not None:
+            self._put_cache("pool_list", pools)
+
+        volumes = self._http_get("/vol/list")
+        if volumes is not None:
+            self._put_cache("volume_list", volumes)
+
+        topology = self._http_get("/discovery/topology")
+        if topology is not None:
+            self._put_cache("cluster_topology", topology)

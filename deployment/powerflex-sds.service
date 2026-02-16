@@ -1,0 +1,17 @@
+[Unit]
+Description=PowerFlex SDS Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/Powerflex_demo
+Environment="POWERFLEX_MDM_URL=http://172.30.128.50:8001"
+Environment="POWERFLEX_SDS_STORAGE_ROOT=/data/powerflex/sds"
+ExecStartPre=/bin/mkdir -p /data/powerflex/sds
+ExecStart=/bin/bash -lc '/opt/rh/rh-python38/root/usr/bin/python3 /opt/Powerflex_demo/scripts/run_sds_service.py --sds-id ${SDS_ID} --sds-ip ${SDS_IP} --storage-root /data/powerflex/sds --mdm-url http://172.30.128.50:8001 --data-port ${SDS_DATA_PORT} --control-port ${SDS_CONTROL_PORT} --mgmt-port ${SDS_MGMT_PORT}'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=PowerFlex SDS2 Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/Powerflex_demo
+Environment="PYTHONPATH=/opt/Powerflex_demo"
+ExecStartPre=/bin/mkdir -p /data/powerflex/sds
+ExecStart=/bin/bash -lc '/opt/rh/rh-python38/root/usr/bin/python3 /opt/Powerflex_demo/scripts/run_sds_service.py --sds-id 2 --sds-ip 172.30.128.52 --storage-root /data/powerflex/sds --mdm-url http://172.30.128.50:8001 --data-port 9700 --control-port 9100 --mgmt-port 9200'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

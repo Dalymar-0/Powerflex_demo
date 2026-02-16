@@ -1,11 +1,11 @@
-from typing import Any
+from typing import Any, Set, Tuple, Optional
 
 from sqlalchemy.orm import Session
 
 from mdm.models import ClusterNode, ClusterNodeStatus
 
 
-def _caps(node: ClusterNode) -> set[str]:
+def _caps(node: ClusterNode) -> Set[str]:
     raw = getattr(node, "capabilities", "") or ""
     return {cap.strip().upper() for cap in raw.split(",") if cap.strip()}
 
@@ -31,7 +31,7 @@ def validate_node_capability(
     node_id: str,
     capability: str,
     require_active: bool = True,
-) -> tuple[bool, str, ClusterNode | None]:
+) -> Tuple[bool, str, Optional[ClusterNode]]:
     node = db.query(ClusterNode).filter(ClusterNode.node_id == node_id).first()
     if node is None:
         return False, f"Cluster node '{node_id}' not registered", None

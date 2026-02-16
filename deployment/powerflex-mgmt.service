@@ -1,0 +1,17 @@
+[Unit]
+Description=PowerFlex MGMT GUI
+After=network.target powerflex-mdm.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/Powerflex_demo
+Environment="POWERFLEX_MDM_BASE_URL=http://127.0.0.1:8001"
+Environment="POWERFLEX_GUI_BIND_HOST=0.0.0.0"
+Environment="POWERFLEX_GUI_PORT=5000"
+ExecStart=/bin/bash -lc '/opt/rh/rh-python38/root/usr/bin/python3 /opt/Powerflex_demo/scripts/run_mgmt_service.py'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
