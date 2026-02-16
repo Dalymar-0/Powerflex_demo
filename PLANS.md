@@ -32,6 +32,7 @@ PowerFlex concepts to emulate in this project:
 - **SDC (client datapath initiator)**: sends IO to the correct SDS endpoint(s).
 - **SDS (data server)**: owns local storage chunks/blocks and serves reads/writes.
 - **MDM-like control plane**: owns metadata mapping of volume->chunks->replica locations and policy.
+- **Network plane split**: control-plane traffic (`MDM`/cluster metadata + membership) uses control ports, while SDS IO uses dedicated data-plane ports.
 - **Protection domain / pool policy**: defines placement and protection behavior.
 - **Rebuild/failure flow**: when SDS fails, mark degraded and re-protect replicas.
 
@@ -50,6 +51,8 @@ PowerFlex concepts to emulate in this project:
    - We can provide file-level virtual volumes + CLI mount abstraction (path-based), not kernel block driver.
 2. Strong consistency and distributed transactions:
    - We can implement practical demo-level consistency (single leader metadata manager + acknowledgements), not production-grade consensus initially.
+3. MDM high-availability quorum:
+   - Full multi-MDM consensus with tie-breaker arbitration is not yet implemented; current repo uses a single active control-plane authority model.
 
 #### ❌ Not feasible in current scope (unless we add system-level components)
 1. Native kernel block-driver integration equivalent to enterprise SDC.
@@ -78,6 +81,7 @@ PowerFlex concepts to emulate in this project:
 #### Phase D - Multi-VM deployment demo
 - Run one node process per VM with capability configuration (single-role or multi-role).
 - Configure peer discovery/registration and capability-aware membership.
+- Enforce control-plane and data-plane port separation in bootstrap/runbook (SDS data socket endpoints resolved only from data-plane ports).
 - Execute scripted scenario: create PD/pool/volume -> map -> IO -> fail SDS-capable node -> rebuild.
 
 #### Phase E - Observability and operator UX
@@ -101,6 +105,26 @@ The project is "demo-ready" when:
 3. Stopping an `SDS`-capable node degrades but does not lose data for protected volumes.
 4. Rebuild restores replica count on remaining/added `SDS`-capable nodes and pool health returns to OK.
 5. Demo script runs reproducibly across mixed capability combinations without manual DB surgery.
+
+#### Current Assessment (2026-02-12)
+
+**Current Phase Position:** Late **Phase B** / Early **Phase C**
+
+- [x] DoD #2: `MDM` capability is present and used for metadata/control-plane checks.
+- [~] DoD #1: End-to-end SDC↔SDS read/write exists on single-machine topology; full VM-A/VM-B/VM-C validation still pending.
+- [~] DoD #3: Failure/degraded paths exist, but repeatable no-data-loss proof across distributed runs still pending.
+- [ ] DoD #4: Full replica-restoration proof (including pool health return to OK) is not yet locked as a repeatable demo run.
+- [~] DoD #5: Bootstrap/demo scripts exist, but reproducibility across mixed capability combinations needs final scripted validation.
+
+Legend: `[x]` complete, `[~]` partial/in-progress, `[ ]` pending.
+
+#### Exit Criteria: Phase C → Phase D
+
+- [ ] Scripted validation run (`scripts/validate_demo_ready.py`) completes without manual DB edits.
+- [ ] DoD #1 evidence captured: successful mapped volume write/read roundtrip in report output.
+- [ ] DoD #3 evidence captured: read still succeeds after failing one `SDS` node.
+- [ ] DoD #4 evidence captured: rebuild start/status output recorded and reviewed.
+- [ ] Runbook inputs finalized for VM mapping (which node/VM hosts each capability role).
 
 ---
 

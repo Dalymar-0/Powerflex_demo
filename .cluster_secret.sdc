@@ -1,0 +1,5 @@
+{
+  "cluster_secret": "2d3b1fc8f11ce4efdb3c4095c79a6147d5c9a7800ee2ac90d3226c2edb339dce",
+  "cluster_name": "powerflex_cluster_default",
+  "component_id": "sdc-vm-compute1"
+}

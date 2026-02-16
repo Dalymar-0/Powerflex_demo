@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PowerFlex Alerts</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .alert-critical { border-left: 4px solid #dc3545; }
+        .alert-error { border-left: 4px solid #fd7e14; }
+        .alert-warning { border-left: 4px solid #ffc107; }
+        .alert-info { border-left: 4px solid #17a2b8; }
+        .alert-resolved { opacity: 0.6; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">PowerFlex MGMT</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item"><a class="nav-link" href="/health">Health</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/alerts">Alerts</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/volume">Volumes</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/pool">Pools</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/sds">SDS</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/sdc">SDC</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/metrics">Metrics</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2>Alerts Management</h2>
+            </div>
+        </div>
+
+        <!-- Alert Summary -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">Total Active</h6>
+                        <h3>{{ alert_counts.total }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">Critical</h6>
+                        <h3 class="text-danger">{{ alert_counts.critical }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">Warnings</h6>
+                        <h3 class="text-warning">{{ alert_counts.warning }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted">24h History</h6>
+                        <h3>{{ alert_history.total_alerts }}</h3>
+                        <small class="text-muted">{{ alert_history.resolved }} resolved</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Alerts -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4>Active Alerts</h4>
+                {% if active_alerts %}
+                <div class="list-group">
+                    {% for alert in active_alerts %}
+                    <div class="list-group-item alert-{{ alert.severity }}">
+                        <div class="d-flex w-100 justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">
+                                    <span class="badge bg-{{ 'danger' if alert.severity == 'critical' else 'warning' if alert.severity == 'warning' else 'info' }}">
+                                        {{ alert.severity.upper() }}
+                                    </span>
+                                    {{ alert.title }}
+                                    {% if alert.acknowledged %}
+                                    <span class="badge bg-secondary">ACK by {{ alert.acknowledged_by }}</span>
+                                    {% endif %}
+                                </h6>
+                                <p class="mb-1">{{ alert.message }}</p>
+                                {% if alert.component_type %}
+                                <small class="text-muted">
+                                    <strong>Component:</strong> {{ alert.component_type }} - {{ alert.component_id }}
+                                </small>
+                                <br>
+                                {% endif %}
+                                <small class="text-muted">
+                                    <strong>Created:</strong> {{ alert.created_at }} ({{ "%.0f"|format(alert.age_seconds / 60) }} min ago)
+                                </small>
+                            </div>
+                            <div class="ms-3">
+                                {% if not alert.acknowledged %}
+                                <form action="/alerts/{{ alert.alert_id }}/acknowledge" method="post" class="d-inline">
+                                    <input type="hidden" name="username" value="admin">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary">Acknowledge</button>
+                                </form>
+                                {% endif %}
+                                <form action="/alerts/{{ alert.alert_id }}/resolve" method="post" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-outline-success">Resolve</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="alert alert-success">
+                    <strong>No active alerts!</strong> All systems operating normally.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Alerts (24h) -->
+        <div class="row">
+            <div class="col-12">
+                <h4>Recent Alerts (24 hours)</h4>
+                {% if recent_alerts %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Title</th>
+                                <th>Component</th>
+                                <th>Created</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for alert in recent_alerts %}
+                            <tr class="{{ 'alert-resolved' if alert.resolved else '' }}">
+                                <td>
+                                    <span class="badge bg-{{ 'danger' if alert.severity == 'critical' else 'warning' if alert.severity == 'warning' else 'info' }}">
+                                        {{ alert.severity }}
+                                    </span>
+                                </td>
+                                <td>{{ alert.title }}</td>
+                                <td>
+                                    {% if alert.component_type %}
+                                    {{ alert.component_type }}: <code>{{ alert.component_id }}</code>
+                                    {% else %}
+                                    N/A
+                                    {% endif %}
+                                </td>
+                                <td>{{ alert.created_at }}</td>
+                                <td>
+                                    {% if alert.resolved %}
+                                    <span class="badge bg-success">Resolved</span>
+                                    {% elif alert.acknowledged %}
+                                    <span class="badge bg-secondary">Acknowledged</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">Active</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    No alerts in the past 24 hours.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

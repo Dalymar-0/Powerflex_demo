@@ -1,4 +1,6 @@
-# PowerFlex Simulator - Current State Baseline
+# PowerFlex Simulator - Current State Baseline (Archived)
+
+> Archived reference from simulator phase. For active split-service architecture (`MDM`/`SDS`/`SDC`), use `docs/ARCHITECTURE_RESHAPE.md` and `PLANS.md`.
 
 **Last Updated:** 2026-02-12
 **Purpose:** authoritative as-is snapshot before starting new development

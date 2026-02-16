@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Component databases (Option A: Component Ownership)
+mdm/data/*.db
+mdm/data/*.db-journal
+mgmt/data/*.db
+mgmt/data/*.db-journal
+sds/data/*.db
+sds/data/*.db-journal
+sdc/data/*.db
+sdc/data/*.db-journal
+
+# Storage
+vm_storage/
+
+# OS
+.DS_Store
+Thumbs.db
