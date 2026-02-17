@@ -5,6 +5,8 @@ HMAC-SHA256 based token signing and verification for IO authorization.
 Uses stdlib only - no external crypto libraries.
 """
 
+from __future__ import annotations
+
 import hmac
 import hashlib
 import uuid

@@ -65,7 +65,7 @@ def register_with_mdm(mdm_url: str, sds_ip: str, data_port: int, control_port: i
             timeout=10
         )
         
-        if response.status_code == 201:
+        if response.status_code in (200, 201):
             result = response.json()
             logger.info(f"✓ Registration successful: component_id={result['component_id']}")
             return result

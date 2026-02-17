@@ -13,21 +13,25 @@ from typing import Optional, List
 from datetime import datetime
 import hashlib
 import json
+import logging
 
 from mdm.database import SessionLocal
 from mdm.models import ComponentRegistry, ClusterConfig
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
+logger = logging.getLogger(__name__)
 
 
 class RegisterRequest(BaseModel):
     """Component registration request"""
     component_id: str  # e.g., 'sds-10.0.1.10', 'sdc-vm42', 'mdm-primary'
     component_type: str  # 'MDM', 'SDS', 'SDC', 'MGMT'
-    address: str
+    address: Optional[str] = None
+    network_address: Optional[str] = None
     control_port: Optional[int] = None
     data_port: Optional[int] = None
     mgmt_port: Optional[int] = None
+    ports: Optional[dict] = None
     metadata: Optional[dict] = None  # Component-specific metadata (devices, capacity, etc.)
     auth_token: Optional[str] = None  # SHA256(cluster_secret + component_id) for authentication
 
@@ -104,6 +108,15 @@ def register_component(request: RegisterRequest, db: Session = Depends(get_db)):
     
     if not cluster_secret:
         raise HTTPException(status_code=500, detail="Cluster secret not initialized. Run init_db().")
+
+    address = request.address or request.network_address
+    if not address:
+        raise HTTPException(status_code=422, detail="address is required")
+
+    ports = request.ports if isinstance(request.ports, dict) else {}
+    control_port = request.control_port or ports.get("control")
+    data_port = request.data_port or ports.get("data")
+    mgmt_port = request.mgmt_port or ports.get("mgmt")
     
     # Check if component already registered
     existing = db.scalars(select(ComponentRegistry).where(
@@ -111,18 +124,21 @@ def register_component(request: RegisterRequest, db: Session = Depends(get_db)):
     )).first()
     
     if existing:
-        # Verify auth token for existing components
-        if not verify_auth_token(request.component_id, request.auth_token or "", cluster_secret):
+        # Verify auth token for existing components when provided.
+        # For legacy agents that do not send auth_token, allow re-registration.
+        if request.auth_token and not verify_auth_token(request.component_id, request.auth_token, cluster_secret):
             raise HTTPException(
                 status_code=403,
                 detail="Invalid auth token. Re-registration requires valid authentication."
             )
+        if not request.auth_token:
+            logger.warning("Legacy re-registration without auth_token accepted for component %s", request.component_id)
         
         # Update existing registration
-        existing.address = request.address
-        existing.control_port = request.control_port
-        existing.data_port = request.data_port
-        existing.mgmt_port = request.mgmt_port
+        existing.address = address
+        existing.control_port = control_port
+        existing.data_port = data_port
+        existing.mgmt_port = mgmt_port
         existing.status = "ACTIVE"
         existing.last_heartbeat_at = datetime.utcnow()
         if request.metadata:
@@ -134,7 +150,7 @@ def register_component(request: RegisterRequest, db: Session = Depends(get_db)):
             status="updated",
             component_id=request.component_id,
             cluster_name=cluster_name,
-            cluster_secret=None,  # Don't re-send secret on update
+            cluster_secret=cluster_secret,
             message=f"Component {request.component_id} re-registered successfully"
         )
     
@@ -145,10 +161,10 @@ def register_component(request: RegisterRequest, db: Session = Depends(get_db)):
         new_component = ComponentRegistry(
             component_id=request.component_id,
             component_type=request.component_type.upper(),
-            address=request.address,
-            control_port=request.control_port,
-            data_port=request.data_port,
-            mgmt_port=request.mgmt_port,
+            address=address,
+            control_port=control_port,
+            data_port=data_port,
+            mgmt_port=mgmt_port,
             status="ACTIVE",
             cluster_name=cluster_name,
             auth_token_hash=auth_token_hash,

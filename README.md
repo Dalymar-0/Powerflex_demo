@@ -107,6 +107,7 @@ Powerflex_demo/
 
 ### Quick Start
 - **[QUICKSTART.md](docs/QUICKSTART.md)** — Getting started guide (single-host deployment)
+- **[deployment/README.md](deployment/README.md)** — Canonical 5-VM RHEL deployment entrypoint
 
 ### Architecture Deep Dives
 - **[IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)** — Phase-by-phase validation (all 10 phases complete)

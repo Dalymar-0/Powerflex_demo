@@ -4,6 +4,8 @@ PowerFlex Demo — Quick Start Guide (Phase 10.5+)
 
 This guide shows how to start the new architecture services.
 
+For the canonical 5-VM RHEL deployment flow, use deployment/README.md and deployment/automated_deploy.ps1.
+
 SERVICES OVERVIEW
 -----------------
 

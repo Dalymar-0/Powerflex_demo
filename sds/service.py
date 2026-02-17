@@ -235,15 +235,11 @@ class SDSService:
                     sds_id=self.sds_id,
                     component_id=self.component_id,
                     cluster_secret=self.cluster_secret,
-                    data_host=self.data_host,
+                    address=self.data_host,
                     data_port=self.data_port,
-                    control_host=self.control_host,
                     control_port=self.control_port,
-                    mgmt_host=self.mgmt_host,
                     mgmt_port=self.mgmt_port,
-                    mdm_url=self.mdm_url,
-                    status="ACTIVE",
-                    startup_time=datetime.utcnow()
+                    mdm_url=self.mdm_url
                 )
                 db.add(metadata)
                 logger.info("Created SDS metadata record")
@@ -252,15 +248,11 @@ class SDSService:
                 metadata.sds_id = self.sds_id
                 metadata.component_id = self.component_id
                 metadata.cluster_secret = self.cluster_secret
-                metadata.data_host = self.data_host
+                metadata.address = self.data_host
                 metadata.data_port = self.data_port
-                metadata.control_host = self.control_host
                 metadata.control_port = self.control_port
-                metadata.mgmt_host = self.mgmt_host
                 metadata.mgmt_port = self.mgmt_port
                 metadata.mdm_url = self.mdm_url
-                metadata.status = "ACTIVE"
-                metadata.startup_time = datetime.utcnow()
                 logger.info("Updated SDS metadata record")
             
             db.commit()

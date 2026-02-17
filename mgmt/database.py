@@ -5,6 +5,9 @@ Manages the MGMT-specific database (mgmt.db) — completely separate from MDM's 
 This database is owned exclusively by the MGMT component.
 """
 
+import os
+from pathlib import Path
+
 from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import sessionmaker, scoped_session
 from mgmt.models import Base, User, UserRole, MGMTConfig, AlertRule, AlertSeverity
@@ -13,7 +16,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = "sqlite:///./mgmt/data/mgmt.db"
+_DEFAULT_DB_PATH = (Path(__file__).resolve().parent / "data" / "mgmt.db")
+os.makedirs(_DEFAULT_DB_PATH.parent, exist_ok=True)
+DATABASE_URL = str(os.getenv("POWERFLEX_MGMT_DB_URL", f"sqlite:///{_DEFAULT_DB_PATH.as_posix()}"))
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))

@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from datetime import datetime
 import json
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -26,28 +28,28 @@ class ClusterNodeRegister(BaseModel):
     node_id: str = Field(min_length=2)
     name: str = Field(min_length=1)
     address: str = Field(min_length=3)
-    port: int | None = Field(default=None, ge=1, le=65535)
-    control_port: int | None = Field(default=None, ge=1, le=65535)
-    data_port: int | None = Field(default=None, ge=1, le=65535)
-    capabilities: list[str]
-    metadata: dict[str, Any] | None = None
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
+    control_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    data_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    capabilities: List[str]
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class ClusterNodeHeartbeat(BaseModel):
-    status: ClusterNodeStatus | None = None
-    capabilities: list[str] | None = None
+    status: Optional[ClusterNodeStatus] = None
+    capabilities: Optional[List[str]] = None
 
 
 class ClusterBootstrapRequest(BaseModel):
     prefix: str = Field(default="demo", min_length=2)
     address_base: str = Field(default="10.0.0.", min_length=4)
     start_octet: int = Field(default=10, ge=1, le=250)
-    base_port: int | None = Field(default=None, ge=1, le=65000)
+    base_port: Optional[int] = Field(default=None, ge=1, le=65000)
     control_base_port: int = Field(default=CONTROL_PLANE_BASE_PORT, ge=1, le=65000)
     data_base_port: int = Field(default=DATA_PLANE_BASE_PORT, ge=1, le=65000)
 
 
-def _normalize_capabilities(raw_caps: list[str]) -> list[str]:
+def _normalize_capabilities(raw_caps: List[str]) -> List[str]:
     normalized = sorted({cap.upper() for cap in raw_caps})
     allowed = {cap.value for cap in NodeCapability}
     invalid = [cap for cap in normalized if cap not in allowed]
@@ -58,7 +60,7 @@ def _normalize_capabilities(raw_caps: list[str]) -> list[str]:
     return normalized
 
 
-def _serialize_node(node: ClusterNode) -> dict[str, Any]:
+def _serialize_node(node: ClusterNode) -> Dict[str, Any]:
     capabilities_raw = getattr(node, "capabilities", "") or ""
     status_value = getattr(node, "status", None)
     registered_at = getattr(node, "registered_at", None)
@@ -89,7 +91,7 @@ def _serialize_node(node: ClusterNode) -> dict[str, Any]:
     }
 
 
-def _resolve_ports(payload: ClusterNodeRegister, capabilities: list[str]) -> tuple[int, int | None]:
+def _resolve_ports(payload: ClusterNodeRegister, capabilities: List[str]) -> Tuple[int, Optional[int]]:
     control_port = payload.control_port or payload.port
     if not control_port or int(control_port) <= 0:
         raise HTTPException(status_code=400, detail="control_port (or legacy port) is required")
@@ -237,7 +239,7 @@ def bootstrap_minimal_topology(payload: ClusterBootstrapRequest, db: Session = D
 
     created = 0
     updated = 0
-    result_nodes: list[dict[str, Any]] = []
+    result_nodes: List[Dict[str, Any]] = []
 
     for item in topology:
         node_id = f"{payload.prefix}-{item['suffix']}"

@@ -10,9 +10,11 @@ Endpoints:
 - GET /health/metrics: Health metrics over time
 """
 
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
 
@@ -50,9 +52,9 @@ class ComponentStatus(BaseModel):
     last_heartbeat_at: str
     seconds_since_heartbeat: float
     is_stale: bool
-    control_port: int | None = None  # Optional, not all components have all ports
-    data_port: int | None = None
-    mgmt_port: int | None = None
+    control_port: Optional[int] = None  # Optional, not all components have all ports
+    data_port: Optional[int] = None
+    mgmt_port: Optional[int] = None
 
 
 @router.get("/", response_model=HealthSummary)
