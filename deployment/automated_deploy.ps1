@@ -1,16 +1,18 @@
 param(
     [string]$Password = "root",
-    [string]$RepoUrl = "https://github.com/Dalymar-0/Powerflex_demo.git",
     [string]$Branch = "main",
     [string]$PythonBin = "/opt/rh/rh-python38/root/usr/bin/python3",
     [switch]$SkipNetwork,
-    [switch]$SkipRepoSync,
+    [Alias("SkipRepoSync")]
+    [switch]$SkipCodeSync,
     [switch]$SkipDeps,
     [switch]$TestOnly,
+    [switch]$AllowUnpushed,
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $false
 
 $Nodes = @(
     @{ Name = "mdm";  IP = "172.30.128.50"; Hostname = "pflex-mdm";  Services = @("powerflex-mdm", "powerflex-mgmt"); Units = @("powerflex-mdm.service", "powerflex-mgmt.service") },
@@ -22,6 +24,8 @@ $Nodes = @(
 
 $Dns = "172.30.128.10"
 $RepoRoot = "/opt/Powerflex_demo"
+$LocalRepoRoot = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..")).Path
+$DeployRunId = [DateTime]::UtcNow.ToString("yyyyMMddHHmmss")
 
 function Write-Header([string]$Text) {
     Write-Host "`n$('=' * 72)" -ForegroundColor Cyan
@@ -62,17 +66,75 @@ function Copy-Remote {
     }
 }
 
-Write-Header "PowerFlex Deployment (Canonical)"
+function Get-LocalCommitInfo {
+    param([string]$RepoPath)
+
+    $branchName = (git -C $RepoPath rev-parse --abbrev-ref HEAD 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $branchName) {
+        throw "Unable to determine local git branch in $RepoPath"
+    }
+
+    $commit = (git -C $RepoPath rev-parse HEAD 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $commit) {
+        throw "Unable to determine local git commit in $RepoPath"
+    }
+
+    return @{ Branch = $branchName; Commit = $commit }
+}
+
+function Test-HeadPushed {
+    param(
+        [string]$RepoPath,
+        [string]$BranchName,
+        [string]$Commit
+    )
+
+    git -C $RepoPath rev-parse --abbrev-ref "$BranchName@{upstream}" *> $null
+    if ($LASTEXITCODE -ne 0) {
+        return $false
+    }
+
+    git -C $RepoPath fetch --quiet *> $null
+    if ($LASTEXITCODE -ne 0) {
+        return $false
+    }
+
+    git -C $RepoPath merge-base --is-ancestor $Commit "$BranchName@{upstream}" *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
+Write-Header "PowerFlex Automated Deploy (Bootstrap)"
 Write-Info "Target subnet: 172.30.128.0/24"
 Write-Info "Mode: root SSH + systemd services"
+Write-Info "Local repo: $LocalRepoRoot"
 
 Write-Step "Preflight: checking required local tools"
-foreach ($cmd in @("plink", "pscp")) {
+foreach ($cmd in @("plink", "pscp", "git")) {
     if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
         throw "Required command not found: $cmd"
     }
 }
 Write-Ok "Local tool check passed"
+
+Write-Step "Preflight: resolving local commit metadata"
+$commitInfo = Get-LocalCommitInfo -RepoPath $LocalRepoRoot
+$LocalBranch = $commitInfo.Branch
+$LocalCommit = $commitInfo.Commit
+Write-Info "Local branch: $LocalBranch"
+Write-Info "Local commit: $LocalCommit"
+
+if ($Branch -and $LocalBranch -ne $Branch) {
+    throw "Current local branch is '$LocalBranch' but -Branch '$Branch' was requested. Switch branch or pass matching -Branch."
+}
+
+if (-not $AllowUnpushed) {
+    Write-Step "Preflight: verifying local HEAD is pushed to upstream"
+    $isPushed = Test-HeadPushed -RepoPath $LocalRepoRoot -BranchName $LocalBranch -Commit $LocalCommit
+    if (-not $isPushed) {
+        throw "Local HEAD ($LocalCommit) is not confirmed on upstream. Push first, or use -AllowUnpushed to deploy local-only code."
+    }
+    Write-Ok "HEAD is present on upstream"
+}
 
 Write-Step "Preflight: checking SSH reachability"
 $reachable = @()
@@ -115,21 +177,46 @@ if (-not $SkipNetwork) {
     }
 }
 
-if (-not $SkipRepoSync) {
-    Write-Header "Phase 2: Repository Sync"
-    foreach ($node in $reachable) {
-        Write-Step "Syncing repository on $($node.Name)"
-                $cmd = "set -e; if [ ! -d '$RepoRoot/.git' ]; then if [ -d '$RepoRoot' ]; then echo 'WARN: repo has no .git, using existing local files'; else git clone --branch '$Branch' '$RepoUrl' '$RepoRoot'; fi; else cd '$RepoRoot'; (git fetch --all --prune && git checkout '$Branch' && git reset --hard 'origin/$Branch') || echo 'WARN: git sync failed, using existing local repo'; fi"
-        Invoke-Remote -IP $node.IP -Command $cmd | Out-Null
-        Write-Ok "$($node.Name) repository ready"
+if (-not $SkipCodeSync) {
+    Write-Header "Phase 2: Code Sync (Local Commit Archive)"
+    $archiveFile = Join-Path $env:TEMP ("powerflex_sync_{0}_{1}.tar.gz" -f $LocalCommit.Substring(0, 8), $DeployRunId)
+    if (Test-Path $archiveFile) {
+        Remove-Item -Path $archiveFile -Force
     }
+
+    Write-Step "Creating source archive from commit $LocalCommit"
+    git -C $LocalRepoRoot archive --format=tar.gz -o $archiveFile $LocalCommit
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $archiveFile)) {
+        throw "Failed to create local archive for commit $LocalCommit"
+    }
+    Write-Ok "Archive created: $archiveFile"
+
+    foreach ($node in $reachable) {
+        Write-Step "Uploading archive to $($node.Name)"
+        $remoteArchive = "/tmp/powerflex_sync_${DeployRunId}.tar.gz"
+        Copy-Remote -LocalPath $archiveFile -IP $node.IP -RemotePath $remoteArchive
+
+        Write-Step "Applying synced code on $($node.Name)"
+        $cmdTemplate = @'
+set -e; backup=/tmp/powerflex_data___RUNID___; rm -rf "$backup"; mkdir -p "$backup"; if [ -d '___REPOROOT___/mdm/data' ]; then mkdir -p "$backup/mdm"; mv '___REPOROOT___/mdm/data' "$backup/mdm/data"; fi; if [ -d '___REPOROOT___/mgmt/data' ]; then mkdir -p "$backup/mgmt"; mv '___REPOROOT___/mgmt/data' "$backup/mgmt/data"; fi; rm -rf '___REPOROOT___'; mkdir -p '___REPOROOT___'; tar -xzf '___ARCHIVE___' -C '___REPOROOT___'; if [ -d "$backup/mdm/data" ]; then mkdir -p '___REPOROOT___/mdm'; mv "$backup/mdm/data" '___REPOROOT___/mdm/data'; fi; if [ -d "$backup/mgmt/data" ]; then mkdir -p '___REPOROOT___/mgmt'; mv "$backup/mgmt/data" '___REPOROOT___/mgmt/data'; fi; rm -rf "$backup" '___ARCHIVE___'; printf '%s\n' '___COMMIT___' > '___REPOROOT___/.deployed_commit'
+'@
+        $cmd = $cmdTemplate.Replace("___RUNID___", $DeployRunId).Replace("___REPOROOT___", $RepoRoot).Replace("___ARCHIVE___", $remoteArchive).Replace("___COMMIT___", $LocalCommit)
+        Invoke-Remote -IP $node.IP -Command $cmd | Out-Null
+        Write-Ok "$($node.Name) synced to commit $LocalCommit"
+    }
+
+    Remove-Item -Path $archiveFile -Force
+    Write-Ok "Code sync complete on reachable nodes"
 }
 
 if (-not $SkipDeps) {
     Write-Header "Phase 3: Dependency Install"
     foreach ($node in $reachable) {
         Write-Step "Installing Python dependencies on $($node.Name)"
-    $cmd = "set -e; cd '$RepoRoot'; if [ ! -x '$PythonBin' ]; then echo 'Missing Python interpreter: $PythonBin' >&2; exit 1; fi; '$PythonBin' -m pip install -q --upgrade pip || echo 'WARN: pip upgrade skipped'; '$PythonBin' -m pip install -q -r requirements.txt || echo 'WARN: requirements install skipped'; '$PythonBin' -m pip install -q 'urllib3<2' || echo 'WARN: urllib3 pin skipped'; '$PythonBin' - <<'PY'\nimport fastapi, uvicorn, sqlalchemy, pydantic, requests, flask\nprint('deps-ok')\nPY"
+        $depsCmdTemplate = @'
+set -e; cd '___REPOROOT___'; if [ ! -x '___PYBIN___' ]; then echo 'Missing Python interpreter: ___PYBIN___' >&2; exit 1; fi; '___PYBIN___' -m pip install -q --upgrade pip || echo 'WARN: pip upgrade skipped'; '___PYBIN___' -m pip install -q -r requirements.txt || echo 'WARN: requirements install skipped'; '___PYBIN___' -m pip install -q 'urllib3<2' || echo 'WARN: urllib3 pin skipped'; '___PYBIN___' -c "import fastapi, uvicorn, sqlalchemy, pydantic, requests, flask"
+'@
+        $cmd = $depsCmdTemplate.Replace("___REPOROOT___", $RepoRoot).Replace("___PYBIN___", $PythonBin)
         Invoke-Remote -IP $node.IP -Command $cmd | Out-Null
         Write-Ok "$($node.Name) dependencies installed"
     }
@@ -204,3 +291,4 @@ Write-Info "MGMT / HTTP: $mgmtHttp"
 Write-Header "Deployment Complete"
 Write-Host "MDM API : http://172.30.128.50:8001" -ForegroundColor Green
 Write-Host "MGMT GUI: http://172.30.128.50:5000" -ForegroundColor Green
+Write-Host "Deployed commit: $LocalCommit" -ForegroundColor Green

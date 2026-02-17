@@ -12,7 +12,8 @@ This folder is intentionally minimal and contains only the files required for cu
 
 ## Files Kept
 
-- automated_deploy.ps1 (single canonical deployment entrypoint)
+- automated_deploy.ps1 (full bootstrap deploy)
+- automated_resync.ps1 (fast commit sync + redeploy)
 - powerflex-mdm.service
 - powerflex-mgmt.service
 - powerflex-sds1.service
@@ -30,17 +31,41 @@ cd .\deployment
 .\automated_deploy.ps1 -Password root
 ```
 
+For day-to-day updates after code changes:
+
+```powershell
+cd .\deployment
+.\automated_resync.ps1 -Password root
+```
+
+`automated_deploy.ps1` behavior (full bootstrap):
+
+- Reads local `HEAD` commit from your current branch
+- Verifies `HEAD` is pushed to upstream (unless `-AllowUnpushed`)
+- Archives that exact commit locally and syncs it to every node
+- Redeploys services so all nodes run the same commit
+- Applies network baseline and dependency installation by default
+
+`automated_resync.ps1` behavior (quick loop):
+
+- Runs commit sync + unit deploy + DB init + restart + validation
+- Skips network baseline and dependency reinstall by default
+- Supports `-WithNetwork` and `-WithDeps` when needed
+
 Useful flags:
 
 - -TestOnly → only SSH/connectivity preflight
 - -SkipNetwork → do not touch hostname/hosts/resolver
-- -SkipRepoSync → do not clone/reset repo on VMs
+- -SkipCodeSync (alias: -SkipRepoSync) → do not sync local code archive
 - -SkipDeps → skip pip installs
+- -AllowUnpushed → allow deploying local commits not yet pushed
 - -Force → continue if one or more nodes are unreachable
 
 ## Design Notes
 
 - Uses plink + pscp in batch mode (non-interactive)
+- Syncs source from local git commit archive to `/opt/Powerflex_demo` on each node
+- Preserves `/opt/Powerflex_demo/mdm/data` and `/opt/Powerflex_demo/mgmt/data` during sync
 - Deploys service units from this folder into /etc/systemd/system
 - Uses fixed interpreter path: /opt/rh/rh-python38/root/usr/bin/python3
 - Initializes MDM and MGMT data directories before service start
