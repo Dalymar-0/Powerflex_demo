@@ -58,6 +58,18 @@ def get_active_cluster_nodes_with_capability(capability: str):
         if isinstance(node, dict) and node.get("status") == "ACTIVE" and cap in [c.upper() for c in node.get("capabilities", [])]
     ]
 
+
+def get_discovered_components_by_type(component_type: str):
+    ok, payload, _ = call_api("GET", "/discovery/topology")
+    if not ok:
+        return []
+    components = payload.get("components", []) if isinstance(payload, dict) else []
+    wanted = component_type.upper()
+    return [
+        comp for comp in components
+        if isinstance(comp, dict) and str(comp.get("component_type", "")).upper() == wanted
+    ]
+
 @app.route('/')
 def index():
     return render_template('dashboard.html')
@@ -147,10 +159,23 @@ def sds_list():
         sds_nodes = requests.get(f"{BASE_URL}/sds/list").json()
         pds = requests.get(f"{BASE_URL}/pd/list").json()
         sds_capable_nodes = get_active_cluster_nodes_with_capability("SDS")
-        return render_template('sds_list.html', sds_nodes=sds_nodes, pds=pds, sds_capable_nodes=sds_capable_nodes)
+        discovered_sds_nodes = get_discovered_components_by_type("SDS")
+        if isinstance(sds_nodes, list) and len(sds_nodes) == 0 and len(discovered_sds_nodes) > 0:
+            flash(
+                "SDS services are discovered by MDM, but SDS entities are not yet registered. "
+                "Add SDS entries here to manage them in this page.",
+                "warning"
+            )
+        return render_template(
+            'sds_list.html',
+            sds_nodes=sds_nodes,
+            pds=pds,
+            sds_capable_nodes=sds_capable_nodes,
+            discovered_sds_nodes=discovered_sds_nodes,
+        )
     except Exception as e:
         flash(f"Error fetching SDS nodes: {e}", "danger")
-        return render_template('sds_list.html', sds_nodes=[], pds=[], sds_capable_nodes=[])
+        return render_template('sds_list.html', sds_nodes=[], pds=[], sds_capable_nodes=[], discovered_sds_nodes=[])
 
 @app.route('/sds/add', methods=['POST'])
 def sds_add():
@@ -208,10 +233,17 @@ def sdc_list():
     try:
         sdcs = requests.get(f"{BASE_URL}/sdc/list").json()
         sdc_capable_nodes = get_active_cluster_nodes_with_capability("SDC")
-        return render_template('sdc_list.html', sdcs=sdcs, sdc_capable_nodes=sdc_capable_nodes)
+        discovered_sdcs = get_discovered_components_by_type("SDC")
+        if isinstance(sdcs, list) and len(sdcs) == 0 and len(discovered_sdcs) > 0:
+            flash(
+                "SDC services are discovered by MDM, but SDC entities are not yet registered. "
+                "Add SDC entries here to map volumes from this GUI.",
+                "warning"
+            )
+        return render_template('sdc_list.html', sdcs=sdcs, sdc_capable_nodes=sdc_capable_nodes, discovered_sdcs=discovered_sdcs)
     except Exception as e:
         flash(f"Error fetching SDCs: {e}", "danger")
-        return render_template('sdc_list.html', sdcs=[], sdc_capable_nodes=[])
+        return render_template('sdc_list.html', sdcs=[], sdc_capable_nodes=[], discovered_sdcs=[])
 
 @app.route('/sdc/add', methods=['POST'])
 def sdc_add():
@@ -234,6 +266,9 @@ def volume_list():
         volumes = requests.get(f"{BASE_URL}/vol/list").json()
         pools = requests.get(f"{BASE_URL}/pool/list").json()
         sdcs = requests.get(f"{BASE_URL}/sdc/list").json()
+        discovered_sdcs = get_discovered_components_by_type("SDC")
+        if isinstance(sdcs, list) and len(sdcs) == 0 and len(discovered_sdcs) > 0:
+            flash("No SDC entities found for volume mapping. Add SDC clients first from the SDC page.", "warning")
         return render_template('volume_list.html', volumes=volumes, pools=pools, sdcs=sdcs)
     except Exception as e:
         flash(f"Error fetching volumes: {e}", "danger")

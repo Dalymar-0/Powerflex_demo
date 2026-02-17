@@ -62,9 +62,43 @@
                                 <td>{{ sdc.cluster_node_id }}</td>
                             </tr>
                             {% endfor %}
+                            {% if not sdcs %}
+                            <tr>
+                                <td colspan="3" class="text-muted">No managed SDC entities found.</td>
+                            </tr>
+                            {% endif %}
                         </tbody>
                     </table>
                 </div>
+                {% if not sdcs and discovered_sdcs %}
+                <div class="mt-3">
+                    <h5>Discovered SDC Services (read-only)</h5>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Component ID</th>
+                                    <th>Address</th>
+                                    <th>Port</th>
+                                    <th>Status</th>
+                                    <th>Last Heartbeat</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for comp in discovered_sdcs %}
+                                <tr>
+                                    <td>{{ comp.component_id }}</td>
+                                    <td>{{ comp.address }}</td>
+                                    <td>{{ comp.port }}</td>
+                                    <td>{{ comp.status }}</td>
+                                    <td>{{ comp.last_heartbeat }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>

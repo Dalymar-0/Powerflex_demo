@@ -87,6 +87,11 @@
                                 </td>
                             </tr>
                             {% endfor %}
+                            {% if not volumes %}
+                            <tr>
+                                <td colspan="5" class="text-muted">No volumes found. Create a pool and SDC entity first, then create volumes.</td>
+                            </tr>
+                            {% endif %}
                         </tbody>
                     </table>
                 </div>
